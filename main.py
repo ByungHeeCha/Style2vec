@@ -44,7 +44,7 @@ transform = T.Compose([
 
 train_dataset = PolyvoreDataset("./data/train_no_dup.json", "./data/images", transform=transform)
 
-train_data = DataLoader(train_dataset, batch_size=64, shuffle=True)
+train_data = DataLoader(train_dataset, batch_size=32, shuffle=True)
 
 num_train_layer = 5
 
@@ -59,17 +59,17 @@ def train(model, loader):
     train_start = time.time()
     model.to(device=device)
     loss_fn.to(device=device)
-    for epoch in range(1, 3+1):
+    for epoch in range(1, 10+1):
         
         train_loss = 0
         epoch_start = time.time()
         pbar = tqdm(train_data)
         for idx, (input_img, target_img, label) in enumerate(pbar):
             model.train()
-            model._conv_stem.train(False)
-            model._bn0.train(False)
-            for block_index, block in enumerate(model._blocks):
-                if block_index < len(model._blocks) - num_train_layer:
+            model.cnn._conv_stem.train(False)
+            model.cnn._bn0.train(False)
+            for block_index, block in enumerate(model.cnn._blocks):
+                if block_index < len(model.cnn._blocks) - num_train_layer:
                     block.train(False)
             optimizer.zero_grad()
             # print(input_img.shape)

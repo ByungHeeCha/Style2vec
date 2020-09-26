@@ -11,16 +11,16 @@ class Style2Vec(nn.Module):
     def __init__(self, num_train_layer=2, emb_dim=512):
         super(Style2Vec, self).__init__()
         self.cnn = EfficientNet.from_pretrained('efficientnet-b4', advprop=True, include_top=False)
-        self.mlp = nn.Sequential([
+        self.mlp = nn.Sequential(
             nn.Linear(1792, 1792),
             MemoryEfficientSwish(),
             nn.Linear(1792, emb_dim)
-        ])
-        self.context_mlp = nn.Sequential([
+        )
+        self.context_mlp = nn.Sequential(
             nn.Linear(1792, 1792),
             MemoryEfficientSwish(),
             nn.Linear(1792, emb_dim)
-        ])
+        )
         # ct = 0
         for ct, child in enumerate(self.cnn.children()):
             # print(child)
@@ -33,7 +33,7 @@ class Style2Vec(nn.Module):
             elif ct == 2:
                 # i = 0
                 for i, block in enumerate(child.children()):
-                    if i>=len(child.children())-num_train_layer:
+                    if i>=32-num_train_layer:
                         # block.apply(init_weights)
                         for param in block.parameters():
                             param.requires_grad = True
@@ -44,8 +44,11 @@ class Style2Vec(nn.Module):
             # ct+=1
     
     def forward(self, image, context):
-        ivec = self.mlp(self.cnn(image))
-        contextvec = self.context_mlp(self.context(context))
+        # a = self.cnn(image)
+        # print(a.shape)
+        # print(a.flatten(start_dim=1).shape)
+        ivec = self.mlp(self.cnn(image).flatten(start_dim=1))
+        contextvec = self.context_mlp(self.cnn(context).flatten(start_dim=1))
         return ivec, contextvec
 
 class NegLoss(nn.Module):
