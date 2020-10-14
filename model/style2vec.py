@@ -7,23 +7,24 @@ import numpy as np
 import torch.nn.functional as F
 
 
+class Normalize(nn.Module):
+
+    def __init__(self, power=2):
+        super(Normalize, self).__init__()
+        self.power = power
+
+    def forward(self, x):
+        norm = x.pow(self.power).sum(1, keepdim=True).pow(1. / self.power)
+        out = x.div(norm)
+        return out
+
 class Style2Vec(nn.Module):
     def __init__(self, num_train_layer=2, emb_dim=512):
         super(Style2Vec, self).__init__()
         self.cnn = EfficientNet.from_pretrained('efficientnet-b4', advprop=True, include_top=False)
-        self.mlp = nn.Sequential(
-            nn.Linear(1792, 1792),
-            MemoryEfficientSwish(),
-            nn.Linear(1792, emb_dim)
-        )
-        self.context_mlp = nn.Sequential(
-            nn.Linear(1792, 1792),
-            MemoryEfficientSwish(),
-            nn.Linear(1792, emb_dim)
-        )
-        # ct = 0
+        self.mlp = nn.Linear(1792, emb_dim)
+        self.context_mlp = nn.Linear(1792, emb_dim)
         for ct, child in enumerate(self.cnn.children()):
-            # print(child)
             if ct != 7 and ct != 2:
                 for param in child.parameters():
                     param.requires_grad = False
@@ -31,7 +32,6 @@ class Style2Vec(nn.Module):
                 for param in child.parameters():
                     param.requires_grad = True
             elif ct == 2:
-                # i = 0
                 for i, block in enumerate(child.children()):
                     if i>=32-num_train_layer:
                         # block.apply(init_weights)
@@ -40,13 +40,8 @@ class Style2Vec(nn.Module):
                     else:
                         for param in block.parameters():
                             param.requires_grad = False
-                    # i += 1
-            # ct+=1
     
     def forward(self, image, context):
-        # a = self.cnn(image)
-        # print(a.shape)
-        # print(a.flatten(start_dim=1).shape)
         ivec = self.mlp(self.cnn(image).flatten(start_dim=1))
         contextvec = self.context_mlp(self.cnn(context).flatten(start_dim=1))
         return ivec, contextvec
@@ -54,8 +49,57 @@ class Style2Vec(nn.Module):
 class NegLoss(nn.Module):
     def __init__(self):
         super(NegLoss, self).__init__()
+        self.criterion = nn.BCEWithLogitsLoss(reduction='sum')
 
     def forward(self, ivec, contextvec, label):
-        ivec = ivec.view(-1, 1, ivec.shape[1])
-        contextvec = contextvec.view(-1, contextvec.shape[1], 1)
-        return -(label * torch.bmm(ivec, contextvec).squeeze()).sigmoid().log().sum(-1)
+        return self.criterion((ivec * contextvec).sum(-1), label)
+
+
+class Style2VecV2(nn.Module):
+    def __init__(self, num_train_layer=2, emb_dim=512):
+        super(Style2VecV2, self).__init__()
+        self.cnn = EfficientNet.from_pretrained('efficientnet-b4', advprop=True, include_top=False)
+        self.mlp = nn.Linear(1792, emb_dim)
+        self.context_mlp = nn.Linear(1792, emb_dim)
+        for ct, child in enumerate(self.cnn.children()):
+            if ct != 7 and ct != 2:
+                for param in child.parameters():
+                    param.requires_grad = False
+            elif ct == 7:
+                for param in child.parameters():
+                    param.requires_grad = True
+            elif ct == 2:
+                for i, block in enumerate(child.children()):
+                    if i>=32-num_train_layer:
+                        for param in block.parameters():
+                            param.requires_grad = True
+                    else:
+                        for param in block.parameters():
+                            param.requires_grad = False
+    
+    def forward_img(self, image):
+        img_emb = self.cnn(image)
+        context_emb = self.context_mlp(img_emb.flatten(start_dim=1))
+        img_emb = self.mlp(img_emb.flatten(start_dim=1))
+        return img_emb, context_emb
+
+    def forward_neg(self, negs):
+        neg_emb = self.context_mlp(self.cnn(negs).flatten(start_dim=1))
+        return neg_emb
+    
+    def forward(self, image, context):
+        ivec = self.mlp(self.cnn(image).flatten(start_dim=1))
+        contextvec = self.context_mlp(self.cnn(context).flatten(start_dim=1))
+        return ivec, contextvec
+
+class NegLossV2(nn.Module):
+    def __init__(self):
+        super(NegLossV2, self).__init__()
+        self.criterion = nn.BCEWithLogitsLoss(reduction='sum')
+
+    def forward(self, ivec, contextvecs, negvecs):
+        p = torch.mv(contextvecs, ivec)
+        n = torch.mv(negvecs, ivec)
+        return self.criterion(torch.cat([p, n]), torch.cat([torch.ones_like(p), torch.zeros_like(n)]))
+
+        
