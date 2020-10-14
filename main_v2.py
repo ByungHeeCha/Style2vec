@@ -54,9 +54,6 @@ def train(model, loader):
     
     loss_fn = NegLossV2()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
-
-    # after = optim.lr_scheduler.CosineAnnealingLR(optimizer, 180)
-    # scheduler = GradualWarmupScheduler(optimizer, multiplier=1, total_epoch=20, after_scheduler=after)
     
     train_start = time.time()
     model.to(device=device)
@@ -75,26 +72,21 @@ def train(model, loader):
                 if block_index < len(model.cnn._blocks) - num_train_layer:
                     block.train(False)
             optimizer.zero_grad()
-            # print(input_img.shape)
             i = input_img.to(device=device, dtype=dtype).squeeze()
             n = neg_img.to(device=device, dtype=dtype).squeeze()
             ivec, cvec = model.forward_img(i)
-            # nvec = model.forward_neg(n)
             loss = 0
             for index in range(ivec.shape[0]):
                 nvec = model.forward_neg(n[(5*index):(5*(index+1))])
                 loss += loss_fn(ivec[index], cvec[[a for a in range(ivec.shape[0]) if a!=index]], nvec)
-            # loss /= style_set_len
             loss /= ivec.shape[0]
             train_loss += loss.item()
             
             loss.backward()
-            # torch.nn.utils.clip_grad_value_(model.parameters(), 0.5)
             optimizer.step()
             pbar.set_description("Loss %s" % (loss.item()))
             
         train_loss /= (idx + 1)
-        # scheduler.step()
         
         epoch_time = time.time() - epoch_start
         print("Epoch\t", epoch, 
@@ -109,6 +101,3 @@ def train(model, loader):
 
 model = Style2VecV2(num_train_layer=num_train_layer)
 train(model, train_data)
-# model_save_name = 'Style2vec_linear_mlp_num_train_layer_{}_emb_dim_{}_neg_{}_epoch_{}.pt'.format(num_train_layer, 512, 5, 3)
-# path = F"./trained_model/{model_save_name}"
-# torch.save(model.state_dict(), path)
