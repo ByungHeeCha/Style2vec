@@ -19,11 +19,13 @@ def resize_and_pad(img_size):
         if w < h:
             resized_w = int(w*img_size/h)
             img = T.Resize((resized_w, img_size))(img)
-            img = T.Pad((0, (img_size-resized_w)//2, 0, (img_size-resized_w)-(img_size-resized_w)//2))(img)
+            img = T.Pad((0, (img_size-resized_w)//2, 0, (img_size-resized_w) -
+                         (img_size-resized_w)//2), padding_mode='edge')(img)
         else:
             resized_h = int(h*img_size/w)
             img = T.Resize((img_size, resized_h))(img)
-            img = T.Pad(((img_size-resized_h)//2, 0, (img_size-resized_h)-(img_size-resized_h)//2, 0))(img)
+            img = T.Pad(((img_size-resized_h)//2, 0, (img_size -
+                                                      resized_h)-(img_size-resized_h)//2, 0), padding_mode='edge')(img)
         return img
     return resize_and_pad_with_certain_size
 
@@ -37,7 +39,7 @@ else:
     exit()
 
 transform = T.Compose([
-                T.Lambda(resize_and_pad(380)),
+                T.Lambda(resize_and_pad(240)),
                 T.ToTensor(),
                 T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
             ])
@@ -93,11 +95,12 @@ def train(model, loader):
               "\tLoss\t", train_loss, 
               "\tTime\t", epoch_time,
              )
-        model_save_name = 'Style2vecV2_num_train_layer_{}_emb_dim_{}_neg_{}_epoch_{}.pt'.format(num_train_layer, 512, 5, epoch)
+        model_save_name = 'Style2vecV2_B1_head_2_mlp_emb_dim_{}_neg_{}_epoch_{}.pt'.format(num_train_layer, 512, 5, epoch)
         path = F"./trained_model/{model_save_name}"
         torch.save(model.state_dict(), path)
     elapsed_train_time = time.time() - train_start
     print('Finished training. Train time was:', elapsed_train_time)
+
 
 model = Style2VecV2(num_train_layer=num_train_layer)
 train(model, train_data)

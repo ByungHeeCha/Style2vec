@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader
 import torchvision.transforms as T
 from model import Style2Vec, NegLoss
 from data import PolyvoreDataset
+from efficientnet_pytorch import EfficientNet
 import numpy as np
 from tqdm import tqdm
 import os
@@ -34,7 +35,6 @@ if USE_GPU and torch.cuda.is_available():
 else:
     print("No CPU!")
     exit()
-    
 
 transform = T.Compose([
                 T.Lambda(resize_and_pad(380)),
@@ -43,15 +43,17 @@ transform = T.Compose([
             ])
 
 train_dataset = PolyvoreDataset("./data/train_no_dup.json", "./data/images", transform=transform)
+style_set_len = train_dataset.style_set_len
+print(style_set_len)
 
-train_data = DataLoader(train_dataset, batch_size=32, shuffle=True)
+train_data = DataLoader(train_dataset, batch_size=64, shuffle=True)
 
-num_train_layer = 5
+num_train_layer = 0
 
 def train(model, loader):
     
     loss_fn = NegLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-6)
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
 
     # after = optim.lr_scheduler.CosineAnnealingLR(optimizer, 180)
     # scheduler = GradualWarmupScheduler(optimizer, multiplier=1, total_epoch=20, after_scheduler=after)
@@ -59,33 +61,57 @@ def train(model, loader):
     train_start = time.time()
     model.to(device=device)
     loss_fn.to(device=device)
-    for epoch in range(1, 10+1):
+    for epoch in range(1, 3+1):
         
         train_loss = 0
         epoch_start = time.time()
         pbar = tqdm(train_data)
         for idx, (input_img, target_img, label) in enumerate(pbar):
             model.train()
-            model.cnn._conv_stem.train(False)
-            model.cnn._bn0.train(False)
-            for block_index, block in enumerate(model.cnn._blocks):
-                if block_index < len(model.cnn._blocks) - num_train_layer:
-                    block.train(False)
+            # model.mlp.train()
+            # model.context_mlp.train()
+            # model.cnn.train(False)
+            # model.cnn._conv_stem.train(False)
+            # model.cnn._bn0.train(False)
+            # for block_index, block in enumerate(model.cnn._blocks):
+            #     if block_index < len(model.cnn._blocks) - num_train_layer:
+            #         block.train(False)
             optimizer.zero_grad()
             # print(input_img.shape)
             i = input_img.to(device=device, dtype=dtype)
             t = target_img.to(device=device, dtype=dtype)
-            l = label.to(device=device, dtype=torch.long)
+            l = label.to(device=device, dtype=dtype)
 
 
             ivec, tvec = model(i, t)
-            # print(ivec.shape)
             loss = loss_fn(ivec, tvec, l)
-            # print(loss)
-            train_loss += loss.item()
+            train_loss += (loss.item()/style_set_len)
             
             loss.backward()
+            # torch.nn.utils.clip_grad_value_(model.parameters(), 0.5)
             optimizer.step()
+            pbar.set_description("Loss %s" % (loss.item()))
+            if np.isnan(train_loss):
+                if not torch.isfinite(loss):
+                    print('WARNING: non-finite loss, ending training ')
+                    optimizer.zero_grad()
+                    # model = model.cpu()
+                    print(model.cnn(i[0:2]).flatten(start_dim=1))
+                    del model
+                    del loss_fn
+                    prev = EfficientNet.from_pretrained('efficientnet-b4', advprop=True, include_top=False)
+                    prev.to(device=device)
+                    del optimizer
+                    del t, ivec, tvec
+                    del loss
+                    torch.cuda.empty_cache()
+                    prev.eval()
+                    print(prev(i[0:2]).flatten(start_dim=1))
+                    del i
+                    # model.to(device=device)
+                    # print(prev._blocks[-1]._depthwise_conv.weight-model.cnn.block[-1]._depthwise_conv.weight)
+                print('WARNING: non-finite train loss, ending training ')
+                exit(1)
             
         # train_loss /= (idx + 1)
         # scheduler.step()
@@ -95,12 +121,14 @@ def train(model, loader):
               "\tLoss\t", train_loss, 
               "\tTime\t", epoch_time,
              )
-        
+        model_save_name = 'Style2vec_linear_mlp_num_train_layer_{}_emb_dim_{}_neg_{}_epoch_{}.pt'.format(num_train_layer, 512, 5, epoch)
+        path = F"./trained_model/{model_save_name}"
+        torch.save(model.state_dict(), path)
     elapsed_train_time = time.time() - train_start
     print('Finished training. Train time was:', elapsed_train_time)
 
 model = Style2Vec(num_train_layer=num_train_layer)
 train(model, train_data)
-model_save_name = 'Style2vec_num_train_layer_{}_emb_dim_{}_neg_{}_epoch_{}.pt'.format(num_train_layer, 512, 5, 3)
-path = F"./trained_model/{model_save_name}"
-torch.save(model.state_dict(), path)
+# model_save_name = 'Style2vec_linear_mlp_num_train_layer_{}_emb_dim_{}_neg_{}_epoch_{}.pt'.format(num_train_layer, 512, 5, 3)
+# path = F"./trained_model/{model_save_name}"
+# torch.save(model.state_dict(), path)
