@@ -4,9 +4,10 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
 import torchvision.transforms as T
-from model import Style2VecV2, NegLossV2
+from model import Style2VecV2, NegLossV2, Normalize
 from data import PolyvoreDatasetv2
 from efficientnet_pytorch import EfficientNet
+from efficientnet_pytorch.utils import MemoryEfficientSwish
 import numpy as np
 from tqdm import tqdm
 import os
@@ -50,7 +51,7 @@ print(style_set_len)
 
 train_data = DataLoader(train_dataset, batch_size=1, shuffle=True)
 
-num_train_layer = 3
+num_train_layer = -1
 
 def train(model, loader):
     
@@ -68,11 +69,12 @@ def train(model, loader):
         for idx, (input_img, neg_img) in enumerate(pbar):
             model.train()
             # model.cnn.train(False)
-            model.cnn._conv_stem.train(False)
-            model.cnn._bn0.train(False)
-            for block_index, block in enumerate(model.cnn._blocks):
-                if block_index < len(model.cnn._blocks) - num_train_layer:
-                    block.train(False)
+            if num_train_layer != -1:
+                model.cnn._conv_stem.train(False)
+                model.cnn._bn0.train(False)
+                for block_index, block in enumerate(model.cnn._blocks):
+                    if block_index < len(model.cnn._blocks) - num_train_layer:
+                        block.train(False)
             optimizer.zero_grad()
             i = input_img.to(device=device, dtype=dtype).squeeze()
             n = neg_img.to(device=device, dtype=dtype).squeeze()
@@ -95,12 +97,12 @@ def train(model, loader):
               "\tLoss\t", train_loss, 
               "\tTime\t", epoch_time,
              )
-        model_save_name = 'Style2vecV2_B1_head_2_mlp_emb_dim_{}_neg_{}_epoch_{}.pt'.format(num_train_layer, 512, 5, epoch)
+        model_save_name = 'Style2vecV2_B1_head_linear_num_train_layer_{}_emb_dim_{}_neg_{}_epoch_{}.pt'.format(num_train_layer, 512, 5, epoch)
         path = F"./trained_model/{model_save_name}"
         torch.save(model.state_dict(), path)
     elapsed_train_time = time.time() - train_start
     print('Finished training. Train time was:', elapsed_train_time)
 
 
-model = Style2VecV2(num_train_layer=num_train_layer)
+model = Style2VecV2(num_train_layer=num_train_layer, train_context=True)
 train(model, train_data)

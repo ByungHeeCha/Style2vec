@@ -104,7 +104,7 @@ class PolyvoreDatasetv2(Dataset):
                 neg_outfit_index = random.randrange(len(self.data) - 1)
                 if neg_outfit_index != idx:
                     break
-            neg_i = random.randrange(1, len(self.data[neg_outfit_index]["items"])+1)
+            neg_i = random.choice(self.data[neg_outfit_index]["items"])['index']
             neg_set_id = self.data[neg_outfit_index]['set_id']
             neg_img = Image.open(os.path.join(self.img_dir, neg_set_id, '%s.jpg' % neg_i)).convert('RGB')
             neg_imgs.append(neg_img)
